@@ -65,28 +65,36 @@ def display_login_button():
         st.error("Google Client ID is not configured. Cannot display login button.")
         return
 
-    # The URL of your Streamlit app. This must be an "Authorized redirect URI" in your GCP OAuth Client ID settings.
-    # For local dev, 'http://localhost:8501' is common. For deployment, use the app's public URL.
-    redirect_uri = "https://veo-genmedia-536936801426.us-central1.run.app" # Replace with your deployed app's URL if necessary
+    # The redirect logic is now handled entirely by JavaScript using the current
+    # window location. This makes it work seamlessly for both local development
+    # and deployment without changing the code.
+    #
+    # You just need to ensure that BOTH `http://localhost:8501` AND your deployed URL
+    # (e.g., https://veo-genmedia-536936801426.us-central1.run.app) are added to the
+    # "Authorized JavaScript origins" and "Authorized redirect URIs" in your
+    # Google Cloud Console's OAuth Client ID settings (see Step 2).
 
     st.html(f'''
         <script src="https://accounts.google.com/gsi/client" async defer></script>
         <script>
         function handleCredentialResponse(response) {{
             const id_token = response.credential;
-            const url = new URL("{redirect_uri}");
-            url.searchParams.set('token', id_token);
-            window.location.href = url.href;
+            // Use the current window's origin to build the redirect URL.
+            // This works for both localhost and deployed environments.
+            const redirect_url = new URL(window.location.origin);
+            redirect_url.searchParams.set('token', id_token);
+            window.location.href = redirect_url.href;
         }}
         window.onload = function () {{
             google.accounts.id.initialize({{
                 client_id: "{GOOGLE_CLIENT_ID}",
                 callback: handleCredentialResponse
             }});
-            google.accounts.id.renderButton(
-                document.getElementById("buttonDiv"),
-                {{ theme: "outline", size: "large", text: "signin_with" }}
-            );
+            // Render the button in the center.
+            const parent = document.getElementById("buttonDiv");
+            google.accounts.id.renderButton(parent, {{ theme: "outline", size: "large", text: "signin_with" }});
+            parent.style.display = 'flex';
+            parent.style.justifyContent = 'center';
         }};
         </script>
         <div id="buttonDiv"></div>
