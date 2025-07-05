@@ -18,8 +18,8 @@ import auth_token
 # --- Configuration ---
 # Ensure these environment variables are correctly set for your GCP project
 # For local development, consider using Streamlit secrets or directly setting in code as you have for demo
-os.environ['GOOGLE_APPLICATION_CREDENTIALS'] = '/Users/diyasini/Desktop/Live Demo page/GenMedia/key-svc-gen-ai.json.json'
-os.environ['GOOGLE_CLOUD_PROJECT'] = 'heroprojectlivedemo'
+# os.environ['GOOGLE_APPLICATION_CREDENTIALS'] = '/Users/diyasini/Desktop/Live Demo page/GenMedia/key-svc-gen-ai.json.json'
+# os.environ['GOOGLE_CLOUD_PROJECT'] = 'heroprojectlivedemo'
 os.environ['GCP_REGION'] = 'us-central1'
 project_id = "heroprojectlivedemo"
 gcs_bucket_name = "genmedia_video_hero_package"
