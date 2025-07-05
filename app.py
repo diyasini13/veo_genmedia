@@ -54,11 +54,67 @@ def refine_prompt_with_gemini(user_prompt: str, for_video: bool = False) -> str:
     except Exception as e:
         st.error(f"An error occurred with Gemini: {e}")
         return ""
+    
+def refine_veo_prompt_with_gemini(user_prompt: str, image_bytes: bytes) -> str:
+    """Uses Gemini on Vertex AI to refine a user's prompt for image or video generation."""
+    model = GenerativeModel("gemini-2.0-flash")
+    
+    refinement_prompt = f"""
+    You are an expert prompt engineer for text-to-video models.
+    Your task is to refine the following user prompt to make it more descriptive, vivid, and detailed for generating a high-quality, engaging video from a static image.
+    Focus on adding specific details about camera movements (e.g., pan, zoom, tilt), character actions, environmental changes, and dynamic elements.
+    Return only the refined prompt, without any additional text or explanation.
+
+    User Prompt: "{user_prompt}"
+    """
+    
+    try:
+        # Pass the prompt and image as a list of Part objects
+        # The mime_type should match the actual image type (e.g., "image/png", "image/jpeg")
+        contents = [
+            Part.from_text(refinement_prompt),
+            Part.from_data(image_bytes, mime_type="image/png") # Assuming PNG, adjust if needed based on actual uploaded file type
+        ]
+        
+        response = model.generate_content(contents)
+        return response.text.strip()
+    except Exception as e:
+        st.error(f"An error occurred with Gemini: {e}")
+        return ""
+# def refine_veo_prompt_with_gemini(user_prompt: str, image_bytes: bytes) -> str:
+#     """Uses Gemini on Vertex AI to refine a user's prompt for image or video generation."""
+#     model = GenerativeModel("gemini-2.0-flash")
+    
+    
+#     refinement_prompt = f"""
+#     You are an expert prompt engineer for text-to-video models.
+#     Your task is to refine the following user prompt to make it more descriptive, vivid, and detailed for generating a high-quality, engaging video from a static image.
+#     Focus on adding specific details about camera movements (e.g., pan, zoom, tilt), character actions, environmental changes, and dynamic elements.
+#     Return only the refined prompt, without any additional text or explanation.
+
+#     User Prompt: "{user_prompt}"
+#     """
+#     # else: # For image generation
+#     #     refinement_prompt = f"""
+#     #     You are an expert prompt engineer for text-to-image models.
+#     #     Your task is to refine the following user prompt to make it more descriptive, vivid, and detailed for generating a high-quality, photorealistic image.
+#     #     Add specific details about the subject, environment, lighting, camera angle, and overall style.
+#     #     Return only the refined prompt, without any additional text or explanation.
+
+#     #     User Prompt: "{user_prompt}"
+#     #     """
+    
+#     try:
+#         response = model.generate_content(refinement_prompt , image_bytes=image_bytes)
+#         return response.text.strip()
+#     except Exception as e:
+#         st.error(f"An error occurred with Gemini: {e}")
+#         return ""
 
 def generate_image_with_imagen(prompt: str) -> bytes:
     """Generates an image using Imagen on Vertex AI and returns its bytes."""
     try:
-        model = ImageGenerationModel.from_pretrained("imagegeneration@006")
+        model = ImageGenerationModel.from_pretrained("imagen-3.0-generate-002")
         response = model.generate_images(
             prompt=prompt,
             number_of_images=1,
@@ -181,7 +237,7 @@ def generate_video_with_veo(input_type: str, input_content: bytes | str, video_p
 # --- Streamlit App UI ---
 st.set_page_config(layout="wide", page_title="Gemini & Imagen & Veo Studio")
 
-st.title("✨ AI-Powered Creative Studio")
+st.title("GenMedia Studio ✨")
 st.markdown("Create stunning visuals and videos with Gemini, Imagen, and Veo.")
 
 # Initialize session state variables
@@ -189,7 +245,7 @@ if 'refined_prompt' not in st.session_state:
     st.session_state.refined_prompt = ""
 if 'image_bytes' not in st.session_state:
     st.session_state.image_bytes = None
-if 'uploaded_image_bytes' not in st.session_state:
+if 'uploaded_image_bytes' not in st.session_state: # This will only be used by the 'Animate Image' tab now
     st.session_state.uploaded_image_bytes = None
 if 'video_bytes' not in st.session_state:
     st.session_state.video_bytes = None
@@ -203,9 +259,20 @@ if 'text_to_video_user_prompt' not in st.session_state:
     st.session_state.text_to_video_user_prompt = ""
 if 'text_to_video_refined_prompt' not in st.session_state:
     st.session_state.text_to_video_refined_prompt = ""
+if 'animate_image_uploaded_bytes' not in st.session_state:
+    st.session_state.animate_image_uploaded_bytes = None
+if 'animate_image_prompt_option' not in st.session_state:
+    st.session_state.animate_image_prompt_option = "Without prompt" # Initialize to "Without prompt"
+if 'animate_image_user_prompt' not in st.session_state:
+    st.session_state.animate_image_user_prompt = ""
+if 'animate_image_refined_prompt' not in st.session_state:
+    st.session_state.animate_image_refined_prompt = ""
+if 'animate_image_video_bytes' not in st.session_state:
+    st.session_state.animate_image_video_bytes = None
+
 
 # --- Navigation Bar (Using st.tabs) ---
-tab_image_to_video, tab_text_to_video = st.tabs(["🖼️ Image to Video Generation", "📝 Text to Video Generation"])
+tab_image_to_video, tab_text_to_video, tab_animate_image = st.tabs(["🖼️ Image to Video Generation", "📝 Text to Video Generation", "✨ Animate Image"])
 
 with tab_image_to_video:
     # --- Step 1: Craft Your Image Prompt ---
@@ -235,7 +302,6 @@ with tab_image_to_video:
                         st.session_state.user_entered_prompt = refined_text 
                 
                 st.session_state.image_bytes = None 
-                st.session_state.uploaded_image_bytes = None 
                 st.session_state.video_bytes = None 
                 st.session_state.veo_user_prompt = "" 
                 st.session_state.veo_refined_prompt = "" 
@@ -249,108 +315,99 @@ with tab_image_to_video:
         else:
             st.info("Your refined image prompt, enhanced by Gemini for optimal generation, will appear here.")
 
-    # --- Step 2: Image Generation or Upload ---
-    st.header("Step 2: Generate or Upload a Base Image")
+    # --- Step 2: Image Generation ---
+    st.header("Step 2: Generate a Base Image")
     st.markdown("This image will serve as the static foundation for your video.")
 
-    tab_generate_inner, tab_upload_inner = st.tabs(["Generate with Imagen", "Upload Your Image"])
+    prompt_to_use_for_imagen = st.session_state.refined_prompt if st.session_state.refined_prompt else st.session_state.user_entered_prompt
 
-    with tab_generate_inner:
-        prompt_to_use_for_imagen = st.session_state.refined_prompt if st.session_state.refined_prompt else st.session_state.user_entered_prompt
-
-        if st.button("🎨 Generate Image with Imagen", use_container_width=True, disabled=not prompt_to_use_for_imagen, key="generate_image_button"):
-            if prompt_to_use_for_imagen:
-                with st.spinner("Imagen is generating your image... This may take a moment."):
-                    st.session_state.image_bytes = generate_image_with_imagen(prompt_to_use_for_imagen)
-                    st.session_state.uploaded_image_bytes = None
-                    st.session_state.video_bytes = None
-                    st.session_state.veo_user_prompt = ""
-                    st.session_state.veo_refined_prompt = ""
-            else:
-                st.warning("Please provide a prompt (in Step 1) to generate an image.")
-        
-        if st.session_state.image_bytes:
-            st.image(st.session_state.image_bytes, caption="Generated by Imagen", use_column_width=True)
+    if st.button("🎨 Generate Image with Imagen", use_container_width=True, disabled=not prompt_to_use_for_imagen, key="generate_image_button"):
+        if prompt_to_use_for_imagen:
+            with st.spinner("Imagen is generating your image... This may take a moment."):
+                st.session_state.image_bytes = generate_image_with_imagen(prompt_to_use_for_imagen)
+                st.session_state.video_bytes = None
+                st.session_state.veo_user_prompt = ""
+                st.session_state.veo_refined_prompt = ""
         else:
-            st.info("Your generated image will appear here.")
-
-    with tab_upload_inner:
-        uploaded_file = st.file_uploader("Choose an image...", type=["jpg", "jpeg", "png"], key="image_uploader")
-
-        if uploaded_file is not None:
-            uploaded_image_bytes_raw = uploaded_file.getvalue()
-            st.image(uploaded_image_bytes_raw, caption="Uploaded Image", width=200)
-            st.session_state.uploaded_image_bytes = uploaded_image_bytes_raw
-            st.session_state.image_bytes = None
-            st.session_state.video_bytes = None
-            st.session_state.veo_user_prompt = ""
-            st.session_state.veo_refined_prompt = ""
-
-        if st.session_state.uploaded_image_bytes:
-            st.success("Image uploaded successfully! Proceed to Step 3.")
-        else:
-            st.info("Upload an image (JPG, JPEG, PNG) to use for video generation.")
+            st.warning("Please provide a prompt (in Step 1) to generate an image.")
+    
+    if st.session_state.image_bytes:
+        st.image(st.session_state.image_bytes, caption="Generated by Imagen", use_container_width=True)
+    else:
+        st.info("Your generated image will appear here.")
 
     # --- Step 3: Animate Your Image with Veo ---
     st.header("Step 3: Animate Your Image with Veo")
-    st.markdown("Provide a **separate prompt** to guide the video generation. Describe the motion, actions, and camera movements you envision.")
-
+    
     image_for_veo = None
     if st.session_state.image_bytes:
         image_for_veo = st.session_state.image_bytes
         st.info("Using the **Imagen-generated image** for video creation.")
-    elif st.session_state.uploaded_image_bytes:
-        image_for_veo = st.session_state.uploaded_image_bytes
-        st.info("Using the **uploaded image** for video creation.")
     else:
-        st.warning("Please generate or upload an image in Step 2 to proceed with video generation.")
+        st.warning("Please generate an image in Step 2 to proceed with video generation.")
 
-    col1_vid_prompt, col2_vid_prompt = st.columns(2)
-
-    with col1_vid_prompt:
-        veo_user_prompt_current_value = st.text_area(
-            "Enter your idea for the video's motion and story:", 
-            height=150, 
-            key="veo_user_prompt_input",
-            value=st.session_state.veo_user_prompt,
-            help="Describe what should happen in the video, including character actions or camera movements (e.g., 'camera pans left slowly', 'a car drives by')."
-        )
-        st.session_state.veo_user_prompt = veo_user_prompt_current_value
-
-        if st.button("🚀 Refine Video Prompt with Gemini", use_container_width=True, type="primary", key="refine_video_prompt_button"):
-            if st.session_state.veo_user_prompt:
-                with st.spinner("Gemini is refining your video prompt..."):
-                    refined_veo_text = refine_prompt_with_gemini(st.session_state.veo_user_prompt, for_video=True)
-                    if refined_veo_text:
-                        st.session_state.veo_refined_prompt = refined_veo_text
-                        st.session_state.veo_user_prompt = refined_veo_text
-                st.session_state.video_bytes = None
-            else:
-                st.warning("Please enter an initial idea for the video to refine.")
-
-    with col2_vid_prompt:
-        if st.session_state.veo_refined_prompt:
-            st.markdown("**Gemini's Refined Video Prompt:**")
-            st.info(st.session_state.veo_refined_prompt)
-        elif st.session_state.veo_user_prompt:
-            st.markdown("**Your Video Prompt:**")
-            st.info(st.session_state.veo_user_prompt)
-        else:
-            st.info("Your refined video prompt will appear here.")
-
-    final_veo_prompt_image_to_video = (
-        st.session_state.veo_refined_prompt
-        or st.session_state.veo_user_prompt
+    # Added the radio button for prompt options
+    st.subheader("Animation Options")
+    st.session_state.animate_image_prompt_option = st.radio(
+        "How do you want to animate the image?",
+        ("Without prompt", "With prompt"),
+        key="image_to_video_prompt_option_radio" # Unique key for this radio button
     )
+
+    final_veo_prompt_image_to_video = ""
+
+    if st.session_state.animate_image_prompt_option == "With prompt":
+        st.markdown("Provide a **separate prompt** to guide the video generation. Describe the motion, actions, and camera movements you envision.")
+        col1_vid_prompt, col2_vid_prompt = st.columns(2)
+
+        with col1_vid_prompt:
+            veo_user_prompt_current_value = st.text_area(
+                "Enter your idea for the video's motion and story:", 
+                height=150, 
+                key="veo_user_prompt_input",
+                value=st.session_state.veo_user_prompt,
+                help="Describe what should happen in the video, including character actions or camera movements (e.g., 'camera pans left slowly', 'a car drives by')."
+            )
+            st.session_state.veo_user_prompt = veo_user_prompt_current_value
+
+            if st.button("🚀 Refine Video Prompt with Gemini", use_container_width=True, type="primary", key="refine_video_prompt_button"):
+                if st.session_state.veo_user_prompt:
+                    with st.spinner("Gemini is refining your video prompt..."):
+                        refined_veo_text = refine_veo_prompt_with_gemini(st.session_state.veo_user_prompt , st.session_state.image_bytes)
+                        # refined_veo_text = refine_prompt_with_gemini(st.session_state.veo_user_prompt, for_video=True)
+                        if refined_veo_text:
+                            st.session_state.veo_refined_prompt = refined_veo_text
+                            st.session_state.veo_user_prompt = refined_veo_text
+                    st.session_state.video_bytes = None
+                else:
+                    st.warning("Please enter an initial idea for the video to refine.")
+
+        with col2_vid_prompt:
+            if st.session_state.veo_refined_prompt:
+                st.markdown("**Gemini's Refined Video Prompt:**")
+                st.info(st.session_state.veo_refined_prompt)
+            elif st.session_state.veo_user_prompt:
+                st.markdown("**Your Video Prompt:**")
+                st.info(st.session_state.veo_user_prompt)
+            else:
+                st.info("Your refined video prompt will appear here.")
+        
+        final_veo_prompt_image_to_video = (
+            st.session_state.veo_refined_prompt
+            or st.session_state.veo_user_prompt
+        )
+    else: # "Without prompt" selected
+        final_veo_prompt_image_to_video = "Animate the image." # Default prompt for no explicit user prompt
 
     st.markdown("---")
 
     if st.button("🎬 Generate Video from Image", use_container_width=True, 
-                 disabled=not (image_for_veo and final_veo_prompt_image_to_video), key="generate_video_button"):
+                 disabled=not (image_for_veo and (st.session_state.animate_image_prompt_option == "Without prompt" or final_veo_prompt_image_to_video)), 
+                 key="generate_video_button"):
         if not image_for_veo:
-            st.warning("Please generate or upload an image in Step 2 first.")
-        elif not final_veo_prompt_image_to_video:
-            st.warning("Please provide a prompt for video generation in Step 3.")
+            st.warning("Please generate an image in Step 2 first.")
+        elif st.session_state.animate_image_prompt_option == "With prompt" and not final_veo_prompt_image_to_video:
+            st.warning("Please provide a prompt for video generation or select 'Without prompt'.")
         else:
             with st.spinner("Veo is animating your image... This can take several minutes."):
                 st.session_state.video_bytes = generate_video_with_veo("image", image_for_veo, final_veo_prompt_image_to_video)
@@ -418,3 +475,95 @@ with tab_text_to_video:
         st.video(st.session_state.video_bytes)
     else:
         st.info("Your generated video will appear here after Veo finishes processing.")
+
+with tab_animate_image:
+    st.header("Animate an Image with Veo")
+    st.markdown("Upload an image and choose whether to animate it with or without a descriptive prompt.")
+
+    # --- Upload Image Section ---
+    st.subheader("Upload Your Image")
+    uploaded_animate_file = st.file_uploader("Choose an image to animate...", type=["jpg", "jpeg", "png"], key="animate_image_uploader")
+
+    if uploaded_animate_file is not None:
+        st.session_state.animate_image_uploaded_bytes = uploaded_animate_file.getvalue()
+        st.image(st.session_state.animate_image_uploaded_bytes, caption="Image to Animate", width=300)
+        st.success("Image uploaded successfully!")
+        st.session_state.animate_image_video_bytes = None # Clear previous video
+    else:
+        st.info("Upload an image (JPG, JPEG, PNG) to animate.")
+
+    # --- Prompt Options ---
+    if st.session_state.animate_image_uploaded_bytes:
+        st.subheader("Animation Options")
+        st.session_state.animate_image_prompt_option = st.radio(
+            "How do you want to animate the image?",
+            ("Without prompt", "With prompt"),
+            key="animate_prompt_option_radio"
+        )
+
+        final_animation_prompt = ""
+
+        if st.session_state.animate_image_prompt_option == "With prompt":
+            col1_animate_prompt, col2_animate_prompt = st.columns(2)
+            with col1_animate_prompt:
+                animate_image_user_prompt_current_value = st.text_area(
+                    "Enter your prompt for animation:",
+                    height=150,
+                    key="animate_image_user_prompt_input",
+                    value=st.session_state.animate_image_user_prompt,
+                    help="Describe the desired motion, actions, and camera movements for the animation."
+                )
+                st.session_state.animate_image_user_prompt = animate_image_user_prompt_current_value
+
+                if st.button("🚀 Refine Animation Prompt with Gemini", use_container_width=True, type="primary", key="refine_animate_prompt_button"):
+                    if st.session_state.animate_image_user_prompt:
+                        with st.spinner("Gemini is refining your animation prompt..."):
+                            refined_animate_text = refine_veo_prompt_with_gemini(st.session_state.animate_image_user_prompt, st.session_state.animate_image_uploaded_bytes)
+                            if refined_animate_text:
+                                st.session_state.animate_image_refined_prompt = refined_animate_text
+                                st.session_state.animate_image_user_prompt = refined_animate_text
+                        st.session_state.animate_image_video_bytes = None
+                    else:
+                        st.warning("Please enter an initial idea for the animation to refine.")
+            with col2_animate_prompt:
+                if st.session_state.animate_image_refined_prompt:
+                    st.markdown("**Gemini's Refined Animation Prompt:**")
+                    st.info(st.session_state.animate_image_refined_prompt)
+                elif st.session_state.animate_image_user_prompt:
+                    st.markdown("**Your Animation Prompt:**")
+                    st.info(st.session_state.animate_image_user_prompt)
+                else:
+                    st.info("Your refined animation prompt will appear here.")
+            
+            final_animation_prompt = (
+                st.session_state.animate_image_refined_prompt
+                or st.session_state.animate_image_user_prompt
+            )
+        else: # "Without prompt" selected
+            final_animation_prompt = "Animate the image." # Default prompt
+
+        st.markdown("---")
+        
+        if st.button("🎬 Animate Image", use_container_width=True, 
+                     disabled=not (st.session_state.animate_image_uploaded_bytes and 
+                                   (st.session_state.animate_image_prompt_option == "Without prompt" or final_animation_prompt)), 
+                     key="animate_image_button"):
+            
+            if not st.session_state.animate_image_uploaded_bytes:
+                st.warning("Please upload an image first.")
+            elif st.session_state.animate_image_prompt_option == "With prompt" and not final_animation_prompt:
+                st.warning("Please provide a prompt for animation or select 'Without prompt'.")
+            else:
+                prompt_to_use = final_animation_prompt if st.session_state.animate_image_prompt_option == "With prompt" else "Animate the image." # Default prompt if none provided
+                with st.spinner("Veo is animating your image... This can take several minutes."):
+                    st.session_state.animate_image_video_bytes = generate_video_with_veo(
+                        "image", st.session_state.animate_image_uploaded_bytes, prompt_to_use
+                    )
+
+        if st.session_state.animate_image_video_bytes:
+            st.subheader("Your Animated Video")
+            st.video(st.session_state.animate_image_video_bytes)
+        else:
+            st.info("Your animated video will appear here after Veo finishes processing.")
+    else:
+        st.info("Upload an image above to see animation options.")
