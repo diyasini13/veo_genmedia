@@ -1,101 +1,152 @@
+# auth_token.py - Revised for minimal scopes
 import streamlit as st
-from google.oauth2 import id_token
-from google.auth.transport import requests
+from google_auth_oauthlib import flow
 import os
-from dotenv import load_dotenv
+import google.auth.transport.requests
 
-load_dotenv()
+# Define the absolute minimal scopes for a basic OpenID Connect sign-in.
+# 'openid' is typically required for Google to issue an ID token that contains
+# basic user information like email and name.
+# SCOPES = ['openid'] 
 
-# It's better to load the client ID from an environment variable
-# for security and flexibility. You can set this in your .env file
-# or as a Streamlit secret.
-GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID", "536936801426-bq8u0r27na73gv23nu88jrda15537qk4.apps.googleusercontent.com")
-
-def verify_token(token: str) -> dict | None:
-    """Verifies a Google OAuth2 ID token.
-
-    Args:
-        token: The ID token to verify.
-
-    Returns:
-        A dictionary containing the decoded token information if valid,
-        otherwise None.
+def get_authenticated_user():
     """
-    if not GOOGLE_CLIENT_ID:
-        st.error("GOOGLE_CLIENT_ID is not set. Authentication cannot be verified.")
-        return None
-        
-    try:
-        # The 'aud' (audience) check is automatically performed by verify_oauth2_token
-        idinfo = id_token.verify_oauth2_token(token, requests.Request(), GOOGLE_CLIENT_ID)
-        return idinfo
-    except ValueError as e:
-        st.error(f"Token verification failed: {e}")
-        return None
-    except Exception as e:
-        st.error(f"An unexpected error occurred during token verification: {e}")
-        return None
+    Checks if a user is authenticated and returns their information.
+    Handles the OAuth callback if a 'code' is present in the URL parameters.
+    """
+    # Initialize user_info and credentials in session_state if not present
+    if 'user_info' not in st.session_state:
+        st.session_state.user_info = None
+    if 'credentials' not in st.session_state:
+        st.session_state.credentials = None
+    if 'oauth_state' not in st.session_state:
+        st.session_state.oauth_state = None
 
-def get_authenticated_user() -> dict | None:
-    """
-    Checks for a token in the query parameters, verifies it, and returns
-    the user information if the token is valid.
-    
-    Manages user info in session state.
-    """
-    if 'user_info' in st.session_state:
+    # If user info is already in session, return it
+    if st.session_state.user_info:
         return st.session_state.user_info
 
-    # st.query_params is experimental and returns a list.
-    token_list = st.query_params.get("token", [])
-    token = token_list[0] if token_list else None
+    # Check for OAuth callback parameters in the URL
+    query_params = st.query_params
+    code = query_params.get("code")
+    state = query_params.get("state")
+
+    if code and state:
+        # Check if the state matches to prevent CSRF
+        if state == st.session_state.oauth_state:
+            try:
+                client_id = st.secrets["google_oauth"]["client_id"]
+                client_secret = st.secrets["google_oauth"]["client_secret"]
+
+                # Determine redirect URI for local or deployed environment
+                
+                redirect_uri = "https://veo-genmedia-536936801426.us-central1.run.app"
+
+                flow_instance = flow.Flow.from_client_config(
+                    client_config={
+                        "web": {
+                            "client_id": client_id,
+                            "client_secret": client_secret,
+                            "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+                            "token_uri": "https://oauth2.googleapis.com/token",
+                            "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
+                            "redirect_uris": [redirect_uri],
+                            "javascript_origins": [redirect_uri]
+                        }
+                    },
+                    # scopes=SCOPES # Use the minimal SCOPES defined
+                )
+                flow_instance.redirect_uri = redirect_uri
+
+                # Exchange the authorization code for tokens
+                # This will also get the ID token if 'openid' scope is present
+                flow_instance.fetch_token(code=code)
+                st.session_state.credentials = flow_instance.credentials
+
+                if st.session_state.credentials and st.session_state.credentials.valid:
+                    user_info = {}
+                    # The ID token should contain basic profile info if 'openid' is requested
+                    if hasattr(flow_instance.credentials, 'id_token') and flow_instance.credentials.id_token:
+                        id_token_data = flow_instance.credentials.id_token
+                        user_info = {
+                            "email": id_token_data.get('email'),
+                            "name": id_token_data.get('name'),
+                            "picture": id_token_data.get('picture', 'https://www.gstatic.com/images/branding/product/2x/avatar_square_grey_24dp.png')
+                        }
+                    else:
+                        # Fallback if id_token is not available despite 'openid' (unlikely with Google)
+                        # This might require an additional API call, but we'll try to rely on id_token
+                        st.warning("ID token not found. User information may be limited.")
+
+                    st.session_state.user_info = user_info
+                    
+                    st.experimental_set_query_params() 
+                    st.rerun() 
+                    return st.session_state.user_info
+                else:
+                    st.error("Authentication failed: Invalid or expired credentials.")
+                    st.session_state.credentials = None
+                    st.session_state.user_info = None
+                    st.session_state.oauth_state = None
+                    st.experimental_set_query_params() 
+                    return None
+
+            except Exception as e:
+                st.error(f"Error during authentication callback: {e}")
+                st.session_state.credentials = None
+                st.session_state.user_info = None
+                st.session_state.oauth_state = None
+                st.experimental_set_query_params() 
+                return None
+        else:
+            st.error("Authentication failed: State mismatch. Possible CSRF attack.")
+            st.session_state.credentials = None
+            st.session_state.user_info = None
+            st.session_state.oauth_state = None
+            st.experimental_set_query_params() 
+            return None
     
-    if token:
-        user_info = verify_token(token)
-        if user_info:
-            st.session_state.user_info = user_info
-            # Clear the token from the URL for a cleaner user experience and to prevent reuse.
-            st.query_params.clear()
-            return user_info
     return None
 
 def display_login_button():
-    """Displays the Google Sign-In button using HTML and JavaScript."""
-    if not GOOGLE_CLIENT_ID:
-        st.error("Google Client ID is not configured. Cannot display login button.")
-        return
+    """
+    Displays the Google Sign-In button and initiates the OAuth flow.
+    """
+    try:
+        client_id = st.secrets["google_oauth"]["client_id"]
+        client_secret = st.secrets["google_oauth"]["client_secret"]
 
-    # The redirect logic is now handled entirely by JavaScript using the current
-    # window location. This makes it work seamlessly for both local development
-    # and deployment without changing the code.
-    #
-    # You just need to ensure that BOTH `http://localhost:8501` AND your deployed URL
-    # (e.g., https://veo-genmedia-536936801426.us-central1.run.app) are added to the
-    # "Authorized JavaScript origins" and "Authorized redirect URIs" in your
-    # Google Cloud Console's OAuth Client ID settings (see Step 2).
+        
+        redirect_uri = "https://veo-genmedia-536936801426.us-central1.run.app"
 
-    st.html(f'''
-        <script src="https://accounts.google.com/gsi/client" async defer></script>
-        <script>
-        function handleCredentialResponse(response) {{
-            const id_token = response.credential;
-            // Use the current window's origin to build the redirect URL.
-            // This works for both localhost and deployed environments.
-            const redirect_url = new URL(window.location.origin);
-            redirect_url.searchParams.set('token', id_token);
-            window.location.href = redirect_url.href;
-        }}
-        window.onload = function () {{
-            google.accounts.id.initialize({{
-                client_id: "{GOOGLE_CLIENT_ID}",
-                callback: handleCredentialResponse
-            }});
-            // Render the button in the center.
-            const parent = document.getElementById("buttonDiv");
-            google.accounts.id.renderButton(parent, {{ theme: "outline", size: "large", text: "signin_with" }});
-            parent.style.display = 'flex';
-            parent.style.justifyContent = 'center';
-        }};
-        </script>
-        <div id="buttonDiv"></div>
-    ''')
+        flow_instance = flow.Flow.from_client_config(
+            client_config={
+                "web": {
+                    "client_id": client_id,
+                    "client_secret": client_secret,
+                    "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+                    "token_uri": "https://oauth2.googleapis.com/token",
+                    "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
+                    "redirect_uris": [redirect_uri],
+                    "javascript_origins": [redirect_uri]
+                }
+            },
+            # scopes=SCOPES # Use the minimal SCOPES defined
+        )
+        flow_instance.redirect_uri = redirect_uri
+
+        # We request 'offline' access if you want a refresh token,
+        # which allows your app to get new access tokens without the user re-authenticating.
+        # If you truly want NO persistent access beyond the immediate session,
+        # you could remove access_type='offline'.
+        authorization_url, state = flow_instance.authorization_url(
+            access_type='offline', # Request refresh token (optional based on your need for persistence)
+            # include_granted_scopes='true'
+        )
+        st.session_state['oauth_state'] = state 
+
+        st.link_button("Sign in with Google", url=authorization_url)
+
+    except Exception as e:
+        st.error(f"Error setting up Google Sign-In: {e}")
+        st.info("Please ensure your `secrets.toml` file contains `client_id` and `client_secret` under `[google_oauth]`, and your Google Cloud project's OAuth 2.0 client ID is correctly configured with `Authorized JavaScript origins` and `Authorized redirect URIs`.")

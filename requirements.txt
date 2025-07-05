@@ -6,3 +6,6 @@ pillow
 google-genai
 mediapy
 moviepy
+google-auth-oauthlib 
+google-api-python-client
+google-auth-httplib2
