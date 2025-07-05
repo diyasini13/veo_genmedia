@@ -9,7 +9,7 @@ load_dotenv()
 # It's better to load the client ID from an environment variable
 # for security and flexibility. You can set this in your .env file
 # or as a Streamlit secret.
-GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID", "633630984866-qj00anvn6cu2kahus5ft1cnc4o8pe7dp.apps.googleusercontent.com")
+GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID", "536936801426-bq8u0r27na73gv23nu88jrda15537qk4.apps.googleusercontent.com")
 
 def verify_token(token: str) -> dict | None:
     """Verifies a Google OAuth2 ID token.
@@ -67,7 +67,7 @@ def display_login_button():
 
     # The URL of your Streamlit app. This must be an "Authorized redirect URI" in your GCP OAuth Client ID settings.
     # For local dev, 'http://localhost:8501' is common. For deployment, use the app's public URL.
-    redirect_uri = "http://localhost:8501" # Replace with your deployed app's URL if necessary
+    redirect_uri = "https://veo-genmedia-536936801426.us-central1.run.app" # Replace with your deployed app's URL if necessary
 
     st.html(f'''
         <script src="https://accounts.google.com/gsi/client" async defer></script>
