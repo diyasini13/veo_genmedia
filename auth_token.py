@@ -7,7 +7,7 @@ import google.auth.transport.requests
 # Define the absolute minimal scopes for a basic OpenID Connect sign-in.
 # 'openid' is typically required for Google to issue an ID token that contains
 # basic user information like email and name.
-# SCOPES = ['openid'] 
+SCOPES = ['openid'] 
 
 def get_authenticated_user():
     """
@@ -54,7 +54,7 @@ def get_authenticated_user():
                             "javascript_origins": [redirect_uri]
                         }
                     },
-                    # scopes=SCOPES # Use the minimal SCOPES defined
+                    scopes=SCOPES # Use the minimal SCOPES defined
                 )
                 flow_instance.redirect_uri = redirect_uri
 
@@ -131,7 +131,7 @@ def display_login_button():
                     "javascript_origins": [redirect_uri]
                 }
             },
-            # scopes=SCOPES # Use the minimal SCOPES defined
+            scopes=SCOPES # Use the minimal SCOPES defined
         )
         flow_instance.redirect_uri = redirect_uri
 
@@ -141,7 +141,7 @@ def display_login_button():
         # you could remove access_type='offline'.
         authorization_url, state = flow_instance.authorization_url(
             access_type='offline', # Request refresh token (optional based on your need for persistence)
-            # include_granted_scopes='true'
+            include_granted_scopes='true'
         )
         st.session_state['oauth_state'] = state 
 
