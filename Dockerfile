@@ -30,3 +30,4 @@ COPY . .
 
 # Streamlit-specific commands for running the app
 CMD streamlit run app.py --server.enableXsrfProtection false --server.port $PORT auth_token.py
+

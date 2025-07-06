@@ -21,8 +21,8 @@ import auth_token
 # os.environ['GOOGLE_APPLICATION_CREDENTIALS'] = '/Users/diyasini/Desktop/Live Demo page/GenMedia/key-svc-gen-ai.json.json'
 # os.environ['GOOGLE_CLOUD_PROJECT'] = 'heroprojectlivedemo'
 os.environ['GCP_REGION'] = 'us-central1'
-project_id = "heroprojectlivedemo"
-gcs_bucket_name = "genmedia_video_hero_package"
+project_id = "genail300"
+gcs_bucket_name = " veo_testing_hp"
 
 vertexai.init(project=project_id, location="us-central1")
 client = genai.Client(vertexai=True, project=project_id, location=os.environ['GCP_REGION'])
